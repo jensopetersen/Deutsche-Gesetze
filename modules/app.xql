@@ -7,7 +7,16 @@ import module namespace config="http://exist-db.org/apps/wolfslaw/config" at "co
 
 declare namespace tei="http://www.tei-c.org/ns/1.0";
 
-declare
+declare namespace functx = "http://www.functx.com";
+declare function functx:contains-any-of
+  ( $arg as xs:string? ,
+    $searchStrings as xs:string* )  as xs:boolean {
+
+   some $searchString in $searchStrings
+   satisfies contains($arg,$searchString)
+ } ;
+ 
+ declare
     %templates:wrap
     %templates:default("target-fields", "text")
     %templates:default("target-texts", "all")
@@ -19,7 +28,7 @@ function app:search($node as node(), $model as map(*), $query as xs:string?, $ta
             let $cached := session:get-attribute("wolfslaw.cached-data")
             return
                 if (empty($cached)) then
-                    <p>No search term specified.</p>
+                    <p>No search term was specified and no search is cached.</p>
                 else
                     map {
                         "results" := $cached
@@ -33,74 +42,75 @@ function app:search($node as node(), $model as map(*), $query as xs:string?, $ta
             let $results := 
                 for $target-field in $target-fields 
                 return
-                switch($target-field)
-                    case "title" return
-                        $context//tei:div/tei:head[@type eq 'subtitle'][ft:query(., $query)]
-                    default (:text:) return
-                        $context//tei:div[ft:query(., $query)][not(tei:div)]
-        return
-                let $query-strings := $query//term/text()
-                let $query-strings := if ($query-strings) then $query-strings else tokenize($query//phrase/text(), ' ')
-                let $query-result :=
-                    <result>{
-                        for $query-string in $query-strings
-                        return
-                            if (app:get-terms($query-string))
-                            then <present>{$query-string}</present>
-                            else <absent>{$query-string}</absent>
-                    }</result>
-                return
-                    if ($query-result//absent)
-                    then app:suggest($query-result)
-            else        
+                    switch ($target-field)
+                        case "title" return
+                            $context//tei:div[ft:query(tei:head, $query)]
+                        default (:text:) return
+                            $context//tei:div[ft:query(., $query)][not(tei:div)]
+            return
+                let $report := request:get-parameter("report", "no")
+                let $report := 
+                    if ($report eq 'yes')
+                    then app:report($query, $context, $target-texts, $target-fields)
+                    else ()
                 let $sorted :=
-                            for $result in $results
-                            order by ft:score($result) descending
-                            return
-                                $result
+                    for $result in $results
+                    order by ft:score($result) descending
+                    return
+                        $result
                 let $cached := session:set-attribute("wolfslaw.cached-data", $sorted)
-                        return
-                            map {
-                                "results" := $sorted
+                return
+                    map {
+                        "results" := $sorted,
+                        "report" := $report
                     }
     };
 
 
 (:~
-    Helper function: create a lucene query from the user input
+    Helper function to create a Lucene query with XML syntax from the user input
 :)
-(:TODO: implement <wildcard> and <regex>.:)
+
 declare function app:create-query() {
-    let $queryStr := request:get-parameter("query", ())
-    let $queryStr := normalize-space($queryStr)
+    let $query-string := request:get-parameter("query", ())
+    let $query-string := normalize-space($query-string)
+    (:NB: not used!:)
+    (:TODO: integrate mode!:)
     let $mode := request:get-parameter("mode", "any")
-    return
-        <query>
+    let $luceneParse := local:parse-lucene($query-string)
+    let $luceneXML := util:parse($luceneParse)
+    return local:lucene2xml($luceneXML/node())
+
+    (:    <query>
         {
             if ($mode eq 'any') then
-                for $term in tokenize($queryStr, '\s')
+                for $term in tokenize($query-string, '\s')
                 return
-                    <term occur="should">{$term}</term>
+                    if (functx:contains-any-of($term, ('?', '*')))
+                    then <wildcard occur="should">{$term}</wildcard>
+                    else <term occur="should">{$term}</term>
             else if ($mode eq 'all') then
                 <bool>
                 {
-                    for $term in tokenize($queryStr, '\s')
+                    for $term in tokenize($query-string, '\s')
                     return
-                        <term occur="must">{$term}</term>
+                        if (functx:contains-any-of($term, ('?', '*')))
+                        then <wildcard occur="must">{$term}</wildcard>
+                        else <term occur="must">{$term}</term>
                 }
                 </bool>
             else if ($mode eq 'phrase') then
-                <phrase>{$queryStr}</phrase>
+                <phrase>{$query-string}</phrase>
             else
                 <near slop="5" ordered="no">
                 {
-                    for $term in tokenize($queryStr, '\s')
+                    for $term in tokenize($query-string, '\s')
                     return
                         <term>{$term}</term>
                 }
                 </near>
         }
-        </query>
+        </query>:)
 };
 
 declare
@@ -151,6 +161,7 @@ function app:retrieve-page($node as node(), $model as map(*), $start as xs:int) 
                 <td>{$result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()}</td>
                 <td>{ app:process(util:expand($result)) }</td>
             </tr>:)
+        
         for $result in subsequence($model("results"), $start, 20)
         let $shortTitle := $result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()
         let $id := $result/ancestor::tei:TEI/@xml:id/string()
@@ -170,9 +181,12 @@ declare
     %templates:wrap
 function app:result-count($node as node(), $model as map(*)) {
     let $hit-count := count($model("results"))
-    let $class := if ($hit-count) then 'col-md-3 alert alert-success' else 'col-md-3 alert alert-danger' 
+    let $class := 
+        if ($hit-count) 
+        then 'col-md-12 alert alert-success' 
+        else 'col-md-12 alert alert-danger' 
     return
-        <div class="{$class}">Found <b class="btn btn-default" data-template="app:result-count">{$hit-count}</b> hits.</div>
+        <div class="{$class}">Found <b class="btn btn-default" data-template="app:result-count">{$hit-count}</b> hits. {$model("report")}</div>
 };
 
 declare 
@@ -230,27 +244,95 @@ function app:current-law($node as node(), $model as map(*)) {
     attribute value { $model("law")/@xml:id }
 };
 
-declare function app:get-terms($prefix as xs:string) {
-    util:index-keys(collection($config:app-root)//tei:div[not(tei:div)], $prefix, 
-        function($term as xs:string, $count as xs:int+) {
-            <term name="{$term}" freq="{$count[1]}"/>
-        }, 
-        -1, "lucene-index")
+declare function app:get-hits($query-string as xs:string, $context as element()*) {    
+        $context[ft:query(., $query-string)]
 };
 
-declare function app:suggest($query-result as element()) {
-let $present := $query-result//present
-let $absent := $query-result//absent
+declare function app:serialize-list($sequence as item()*) as item()* {       
+    let $sequence-count := count($sequence)
+    return
+        if ($sequence-count eq 1)
+            then $sequence
+            else
+                if ($sequence-count eq 2)
+                then 
+                    let $first := subsequence($sequence, 1, $sequence-count - 1)
+                    let $last := $sequence[$sequence-count]
+                    return
+                        ($first, ' and ', $last)
+                (:NB: Is it worthwhile doing this for more than two terms?:)
+                else (string-join(subsequence($sequence, 1, $sequence-count - 1), ', '),', and ', $sequence[$sequence-count])
+};
+
+declare function app:report($query as element(), $context as element()*, $target-texts as xs:string+, $target-fields as xs:string+) {
+    (:The suggestions look smart, but do not offer much help in practice; an understandable description of the search result is of more use.:)
+    (:If the suggestions are to be of some help (à la Google: "Did you mean?") a fuzzy search would have to be made, 
+    ordered in descending frequency, but even this would not be intelligent enough.:)
+    (:TODO: Something like the following should be output:
+    You searched for x, y and z in the fields a and b in the texts k, l and m.
+    x had 23 hits and y had 4 hits, but z did not have any hits.
+    Do you wish to have your partial search results displayed or do you wish to revise your search?:)
+    (:Sometimes users may perform "any" searches because they are unsure about which search terms occur and they just enter all possibilities; 
+    in such cases they probably want the search results to be displayed.:)
+    let $query-strings := ($query//term/text(), $query//wildcard/text())
+    let $query-strings := 
+        if ($query-strings) 
+        then $query-strings 
+        else tokenize($query//phrase/text(), ' ')
+    let $query-result :=
+        <result>{
+            for $query-string in $query-strings
+            return
+                let $result := $context[ft:query(., $query-string)]
+                return 
+                    if ($result)
+                    then <span class="present" n="{$result[1]/@freq/string()}">{$query-string}</span>
+                    else <span class="absent">{$query-string}</span>
+        }</result>        
+    let $present := $query-result//span[@class eq 'present']
+    let $present-list :=
+        for $item in $present
+        return <item>{$item} had {$item/@n/string()} hits</item> 
+    let $present-list := app:serialize-list($present-list)
+    let $absent := $query-result//span[@class eq 'absent']
+    let $absent-count := count($absent)
+    let $absent-list := 
+        if ($absent-count)
+        then app:serialize-list($absent)
+        else ()
+    let $search-url:= request:get-url()
+    let $query-string:= request:get-query-string()
+    let $overide-url := concat($search-url, '?', $query-string, '&amp;override=true')
+    let $choices := 
+        <div class="alt">Do you wish to
+            <a onclick="window.history.back()"> revise your search</a> or 
+            <a href="index.html">perform a new search</a>?
+        </div>
     return 
-        if ($present)    
-        then <div class="query-result">One or more of your search terms did not bring any hits. <span class="query-term">{string-join($present, ', ')}</span> brought hits, but <span class="query-term">{string-join($absent, ', ')}</span> did not. Suggestions for words you might use instead are listed below.</div>
-        else <div class="query-result">One or more of your search terms did not bring any hits. <span class="query-term">{string-join($absent, ', ')}</span> did not. Suggestions for words you might use instead are listed below.</div>
-        ,
-        for $absent in $query-result//absent
+        if ($present and $absent)    
+        then 
+            <div class="query-result">
+                <div class="hits"><span class="query-term">{$present-list}</span>, but <span class="query-term">{$absent-list}</span> did not have any hits.</div> 
+                {$choices}
+            </div>
+        else
+            if ($present)
+            then
+                <div class="query-result">
+                    <div class="hits"><span class="query-term">{$present-list}</span>.</div> 
+                    {$choices}
+                </div>
+            else
+                <div class="query-result">
+                    <div class="hits"><span class="query-term">{$absent-list}</span> did not have any hits.</div>
+                    {$choices}
+                </div>
+        (:,
+        for $absent in $query-result//span[@class eq 'absent']
         return    
             <ul class="list-group">
             {
-                let $words := app:get-terms(substring($absent, 1, 2))
+                let $words := app:get-hits(substring($absent, 1, 2), $target-texts, $target-fields)
                 let $before := $words[@name < $absent]
                 let $after := $words[@name > $absent]
                 let $merged := (
@@ -263,7 +345,7 @@ let $absent := $query-result//absent
                     <a href="?query={$absent/@name}">{$absent/@name/string()}</a> <span class="badge">{$absent/@freq/string()}</span>
                     </li>
             }
-            </ul>
+            </ul>:)
 };
 
 declare function app:process($nodes as node()*) {
@@ -300,4 +382,137 @@ declare function app:process($nodes as node()*) {
                 app:process($node/node())
             default return
                 $node
+};
+
+(:@author: Ron Van Den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+declare function local:parse-lucene($string) {
+    (: replace all symbolic booleans with lexical counterparts :)
+    if (matches($string, '[^\\](\|{2}|&amp;{2}|!) ')) then
+        let $rep := replace(
+                                    replace(
+                                        replace($string, '&amp;{2} ', 'AND ')
+                                    , '\|{2} ', 'OR ')
+                                , '! ', 'NOT ')
+        return local:parse-lucene($rep)
+    (: replace all booleans with '<AND/>|<OR/>|<NOT/>' :)
+    else if (matches($string, '[^<](AND|OR|NOT) ')) then
+        let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
+        return local:parse-lucene($rep)
+    (: replace all '+' modifiers with '<AND/>' :)
+    else if (matches($string, '(^|[^\w""''])\+[\w""''(]')) then
+        let $rep := replace($string, '(^|[^\w""''])\+([\w""''(])', '$1<AND type=_+_/>$2')
+        return local:parse-lucene($rep)
+    (: replace all '-' modifiers with '<NOT/>' :)
+    else if (matches($string, '(^|[^\w""''])-[\w""''(]')) then
+        let $rep := replace($string, '(^|[^\w""''])-([\w""''(])', '$1<NOT type=_-_/>$2')
+        return local:parse-lucene($rep)
+    (: replace round brackets with '<bool></bool>' :)
+    else if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')) then
+        let $rep := 
+            (: add @boost attribute when string ends in ^\d :)
+            if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))(<|\W|$)')) then
+                replace($string, '(^|\W|>)\((.*?)\)(\^(\d+))(<|\W|$)', '$1<bool boost=_$4_>$2</bool>$5')
+            else 
+                replace($string, '(^|\W|>)\((.*?)\)(<|\W|$)', '$1<bool>$2</bool>$3')
+        return local:parse-lucene($rep)
+    (: replace quoted phrases with '<near slop=""></bool>' :)
+    else if (matches($string, '(^|\W|>)(""|'').*?\2([~^]\d+)?(<|\W|$)')) then
+        let $rep := 
+            (: add @boost attribute when phrase ends in ^\d :)
+            if (matches($string, '(^|\W|>)(""|'').*?\2([\^]\d+)?(<|\W|$)')) then 
+                replace($string, '(^|\W|>)(""|'')(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near boost=_$5_>$3</near>$6')
+            (: add @slop attribute in other cases :)
+            else 
+                replace($string,  '(^|\W|>)(""|'')(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near slop=_$5_>$3</near>$6')
+        return local:parse-lucene($rep)
+    (: wrap fuzzy search strings in '<fuzzy min-similarity=""></fuzzy>' :)
+    else if (matches($string, '[\w-[<>]]+?~[\d.]*')) then
+        let $rep := replace($string, '([\w-[<>]]+?)~([\d.]*)', '<fuzzy min-similarity=_$2_>$1</fuzzy>')
+        return local:parse-lucene($rep)
+    (: wrap resulting string in '<query></query>' :)
+    else concat('<query>', replace(normalize-space($string), '_', '"'), '</query>')
+};
+
+(:@author: Ron Van Den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+declare function local:lucene2xml($node) {
+    typeswitch ($node)
+        case element(query) return 
+            element { node-name($node)} {
+                element bool {
+                    $node/node()/local:lucene2xml(.)
+                }
+            }
+        case element(AND) return ()
+        case element(OR) return ()
+        case element(NOT) return ()
+        case element(bool) return
+            if ($node/parent::near) 
+            then concat("(", $node, ")") 
+            else element {node-name($node)} {
+                $node/@*,
+                $node/node()/local:lucene2xml(.)
+            }
+        case element() return
+            let $name := 
+                if (($node/self::phrase|$node/self::near)[not(@slop > 0)]) 
+                then 'phrase' 
+                else node-name($node)
+            return 
+                element { $name } {
+                    $node/@*,
+                    if (($node/following-sibling::*[1]|
+                             $node/preceding-sibling::*[1])
+                            [self::AND or self::OR or self::NOT]) 
+                     then
+                         attribute occur { 
+                             if ($node/preceding-sibling::*[1][self::AND]) 
+                             then 'must'
+                             else 
+                                 if ($node/preceding-sibling::*[1][self::NOT]) 
+                                 then 'not'
+                                 else 
+                                     if ($node/following-sibling::*[1]
+                                              [self::AND or self::OR or self::NOT][not(@type)]) 
+                                     then 'should' 
+                     else 'should'
+                        }
+                    else (),
+                    $node/node()/local:lucene2xml(.)
+                }
+        case text() return 
+            if ($node/parent::*[self::query or self::bool]) 
+            then
+                for $tok at $p in tokenize($node, '\s+')[normalize-space()]
+                let $el-name := 
+(:                        if (matches($node, '((^|[^\\])[.?*+()\[\]\\^]|\$$)')):)
+                    if (matches($node, '((^|[^\\])[?*]|\$$)'))
+                    then 'wildcard'
+                    else 
+                        if (matches($node, '((^|[^\\])[.]|\$$)'))
+                        then 'regex'
+                        else 'term'
+                return element { $el-name } {
+                    attribute occur {
+                        if ($p = 1 and $node/preceding-sibling::*[1][self::AND]) 
+                        then 'must'
+                        else 
+                            if ($p = 1 and $node/preceding-sibling::*[1][self::NOT]) 
+                            then 'not'
+                            else 
+                                if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) 
+                                then 'should'
+                                else 'should'
+                    },
+                    if (matches($tok, '(.*?)(\^(\d+))(\W|$)')) 
+                    then
+                        attribute boost {
+                            replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3')
+                        }
+                        else (),
+                    normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1'))
+                }
+            else 
+                normalize-space($node)
+    default return
+        $node
 };

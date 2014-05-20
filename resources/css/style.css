@@ -1,22 +1,32 @@
 /* Application styles could go here */
 
+.search-form {
+    margin-top: 1.8em;
+}
 .query-result {
  color: gray;
  margin: 1em;
 }
 
-.query-term {
+.present, .absent {
  color: #0083CB;   
 }
 
-.inputrow {
+.input-group {
     margin-top: 8px;
 }
 
-.inputrow label {
+.search-form .input-group input .form-control {
+    padding-right:0;
+    padding-top:0;
+    padding-bottom:0;
+}
+
+.input-group label {
     width: 60px;
     display: block;
     float: left;
+    color: gray;
 }
 
 mark {
@@ -25,6 +35,9 @@ mark {
 
 .input-group .form-control {
     width: 60%;
+    padding-right:0;
+    padding-top:0;
+    padding-bottom:0;
 }
 
 label {

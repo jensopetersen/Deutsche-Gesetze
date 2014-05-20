@@ -5,7 +5,7 @@
         <input id="query-field" name="query" type="text" class="templates:form-control form-control"/>
     </div>
     <div class="input-group">
-        <label for="$target-fields">Targets:</label>
+        <label for="target-fields">Targets:</label>
         <select multiple="multiple" name="target-fields" data-template="templates:form-control" class="form-control">
             <option value="text">Text</option>
             <option value="title">Title</option>
@@ -20,8 +20,14 @@
             <option value="near">Near</option>
         </select>
     </div>
+    <div class="input-group">
+        <label for="report">Search Report:</label>
+        <select name="report" data-template="templates:form-control" class="form-control">
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+        </select>
+    </div>
     <div class="input-group-btn">
-        <label for="mode"/>
         <button id="f-btn-search" type="submit" name="action" value="search" class="btn btn-primary">
             <span class="glyphicon glyphicon-search"/> Search
             </button>
