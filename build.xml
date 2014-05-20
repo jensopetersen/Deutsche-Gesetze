@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project default="xar" name="wolfslaw">
+<project default="xar" name="wolfslaw-mod">
     <property name="project.version" value="0.1"/>
-    <property name="project.app" value="wolfslaw"/>
+    <property name="project.app" value="wolfslaw-mod"/>
     <property name="build.dir" value="build"/>
     <target name="xar">
         <mkdir dir="${build.dir}"/>

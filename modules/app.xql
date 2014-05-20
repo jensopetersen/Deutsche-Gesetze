@@ -9,44 +9,98 @@ declare namespace tei="http://www.tei-c.org/ns/1.0";
 
 declare
     %templates:wrap
-    %templates:default("type", "text")
-function app:search($node as node(), $model as map(*), $qu as xs:string?, $type as xs:string, $law as xs:string?) {
-    if (empty($qu) or $qu = "") then
-        let $cached := session:get-attribute("wolfslaw.cached-data")
-        return
-            if (empty($cached)) then
-                <p>No search term specified.</p>
-            else
-                map {
-                    "results" := $cached
-                }
-    else
-        let $context := 
-            if (empty($law) or $law = "") then
-                collection($config:app-root)
-            else
-                collection($config:app-root)/id($law)
-(:                collection($config:app-root)/tei:TEI[@xml:id = $law]:)
-        let $results := 
-            switch($type)
-                case "title" return
-                    $context//tei:div[ft:query(tei:head, $qu)]
-                default return
-                    $context//tei:div[ft:query(., $qu)][not(tei:div)]
-        return
-            if (empty($results)) then
-                app:suggest($qu)
-            else
-                let $sorted :=
-                    for $result in $results
-                    order by ft:score($result) descending
-                    return
-                        $result
-                let $cached := session:set-attribute("wolfslaw.cached-data", $sorted)
-                return
+    %templates:default("target-fields", "text")
+    %templates:default("target-texts", "all")
+    %templates:default("mode", "any")
+function app:search($node as node(), $model as map(*), $query as xs:string?, $target-fields as xs:string+, $target-texts as xs:string+, $mode as xs:string) {
+    let $query := app:create-query()
+    return
+        if (empty($query) or $query = "") then
+            let $cached := session:get-attribute("wolfslaw.cached-data")
+            return
+                if (empty($cached)) then
+                    <p>No search term specified.</p>
+                else
                     map {
-                        "results" := $sorted
+                        "results" := $cached
                     }
+        else 
+            let $target-texts := request:get-parameter('target-texts', 'all')
+            let $context := 
+                if ($target-texts = 'all')
+                then collection($config:data-root)/tei:TEI
+                else collection($config:data-root)//tei:TEI[@xml:id = $target-texts] 
+            let $results := 
+                for $target-field in $target-fields 
+                return
+                switch($target-field)
+                    case "title" return
+                        $context//tei:div/tei:head[@type eq 'subtitle'][ft:query(., $query)]
+                    default (:text:) return
+                        $context//tei:div[ft:query(., $query)][not(tei:div)]
+        return
+                let $query-strings := $query//term/text()
+                let $query-strings := if ($query-strings) then $query-strings else tokenize($query//phrase/text(), ' ')
+                let $query-result :=
+                    <result>{
+                        for $query-string in $query-strings
+                        return
+                            if (app:get-terms($query-string))
+                            then <present>{$query-string}</present>
+                            else <absent>{$query-string}</absent>
+                    }</result>
+                return
+                    if ($query-result//absent)
+                    then app:suggest($query-result)
+            else        
+                let $sorted :=
+                            for $result in $results
+                            order by ft:score($result) descending
+                            return
+                                $result
+                let $cached := session:set-attribute("wolfslaw.cached-data", $sorted)
+                        return
+                            map {
+                                "results" := $sorted
+                    }
+    };
+
+
+(:~
+    Helper function: create a lucene query from the user input
+:)
+(:TODO: implement <wildcard> and <regex>.:)
+declare function app:create-query() {
+    let $queryStr := request:get-parameter("query", ())
+    let $queryStr := normalize-space($queryStr)
+    let $mode := request:get-parameter("mode", "any")
+    return
+        <query>
+        {
+            if ($mode eq 'any') then
+                for $term in tokenize($queryStr, '\s')
+                return
+                    <term occur="should">{$term}</term>
+            else if ($mode eq 'all') then
+                <bool>
+                {
+                    for $term in tokenize($queryStr, '\s')
+                    return
+                        <term occur="must">{$term}</term>
+                }
+                </bool>
+            else if ($mode eq 'phrase') then
+                <phrase>{$queryStr}</phrase>
+            else
+                <near slop="5" ordered="no">
+                {
+                    for $term in tokenize($queryStr, '\s')
+                    return
+                        <term>{$term}</term>
+                }
+                </near>
+        }
+        </query>
 };
 
 declare
@@ -88,25 +142,37 @@ declare
     %templates:wrap
     %templates:default("start", 1)
 function app:retrieve-page($node as node(), $model as map(*), $start as xs:int) {
+    <div class="col-md-12">
     <table class="table table-striped">
     {
+        (:for $result in subsequence($model("results"), $start, 20)
+        return
+            <tr>
+                <td>{$result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()}</td>
+                <td>{ app:process(util:expand($result)) }</td>
+            </tr>:)
         for $result in subsequence($model("results"), $start, 20)
         let $shortTitle := $result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()
+        let $id := $result/ancestor::tei:TEI/@xml:id/string()
         return
             <tr>
                 <td>
-                    <a class="btn btn-default" href="view.html?short={$shortTitle}#{generate-id($result)}">{$shortTitle}</a>
+                    <a class="btn btn-default" href="view.html?id={$id}#{generate-id($result)}">{$shortTitle}</a>
                 </td>
                 <td>{ app:process(util:expand($result)) }</td>
             </tr>
     }
     </table>
+    </div>
 };
 
 declare
     %templates:wrap
 function app:result-count($node as node(), $model as map(*)) {
-    count($model("results"))
+    let $hit-count := count($model("results"))
+    let $class := if ($hit-count) then 'col-md-3 alert alert-success' else 'col-md-3 alert alert-danger' 
+    return
+        <div class="{$class}">Found <b class="btn btn-default" data-template="app:result-count">{$hit-count}</b> hits.</div>
 };
 
 declare 
@@ -114,20 +180,20 @@ declare
 function app:table-of-contents($node as node(), $model as map(*)) {
     for $law in collection($config:data-root)//tei:TEI
     let $title := $law//tei:titleStmt/tei:title[not(@type)]/text()
-    let $short := $law//tei:titleStmt/tei:title[@type="short"]/text()
+    let $short-title := $law//tei:titleStmt/tei:title[@type="short"]/text()
+    let $id := $law/@xml:id/string()
     return
     <tr>
-        <td>{$short}</td>
-        <td><a href="view.html?short={$short}">{$title}</a></td>
+        <td><input type="checkbox" name="target-texts" value="{$id}"></input></td>
+        <td>{$short-title}</td>
+        <td><a href="view.html?id={$id}">{$title}</a></td>
     </tr>
 };
 
 declare
     %templates:wrap
-function app:load($node as node(), $model as map(*), $short as xs:string) {
-    let $law := collection($config:data-root)/tei:TEI[
-        .//tei:fileDesc/tei:titleStmt/tei:title[@type = "short"][. = $short]
-    ]
+function app:load($node as node(), $model as map(*), $id as xs:string) {
+    let $law := collection($config:data-root)/tei:TEI[@xml:id eq $id]
     return
         map {
             "law" := $law
@@ -165,36 +231,47 @@ function app:current-law($node as node(), $model as map(*)) {
 };
 
 declare function app:get-terms($prefix as xs:string) {
-    util:index-keys(collection("/db/apps/wolfslaw")//tei:div[not(tei:div)], $prefix, 
+    util:index-keys(collection($config:app-root)//tei:div[not(tei:div)], $prefix, 
         function($term as xs:string, $count as xs:int+) {
             <term name="{$term}" freq="{$count[1]}"/>
         }, 
         -1, "lucene-index")
 };
 
-declare function app:suggest($term as xs:string) {
-    <ul class="list-group">
-    {
-        let $words := app:get-terms(substring($term, 1, 2))
-        let $before := $words[@name < $term]
-        let $after := $words[@name > $term]
-        let $merged := (
-            subsequence($before, count($before) - 10),
-            subsequence($after, 1, 10)
-        )
-        for $term in $merged
-        return
-            <li class="list-group-item">
-            <a href="?qu={$term/@name}">{$term/@name/string()}</a> <span class="badge">{$term/@freq/string()}</span>
-            </li>
-    }
-    </ul>
+declare function app:suggest($query-result as element()) {
+let $present := $query-result//present
+let $absent := $query-result//absent
+    return 
+        if ($present)    
+        then <div class="query-result">One or more of your search terms did not bring any hits. <span class="query-term">{string-join($present, ', ')}</span> brought hits, but <span class="query-term">{string-join($absent, ', ')}</span> did not. Suggestions for words you might use instead are listed below.</div>
+        else <div class="query-result">One or more of your search terms did not bring any hits. <span class="query-term">{string-join($absent, ', ')}</span> did not. Suggestions for words you might use instead are listed below.</div>
+        ,
+        for $absent in $query-result//absent
+        return    
+            <ul class="list-group">
+            {
+                let $words := app:get-terms(substring($absent, 1, 2))
+                let $before := $words[@name < $absent]
+                let $after := $words[@name > $absent]
+                let $merged := (
+                    subsequence($before, count($before) - 10),
+                    subsequence($after, 1, 10)
+                )
+                for $absent in $merged
+                return
+                    <li class="list-group-item">
+                    <a href="?query={$absent/@name}">{$absent/@name/string()}</a> <span class="badge">{$absent/@freq/string()}</span>
+                    </li>
+            }
+            </ul>
 };
 
 declare function app:process($nodes as node()*) {
     for $node in $nodes
     return
         typeswitch ($node)
+            case text() return
+                $node
             case element(exist:match) return
                 <mark>{$node/text()}</mark>
             case element(tei:body) return

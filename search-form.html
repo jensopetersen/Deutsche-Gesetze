@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<div>
+    <div class="input-group">
+        <label for="query">Search Term:</label>
+        <input id="query-field" name="query" type="text" class="templates:form-control form-control"/>
+    </div>
+    <div class="input-group">
+        <label for="$target-fields">Targets:</label>
+        <select multiple="multiple" name="target-fields" data-template="templates:form-control" class="form-control">
+            <option value="text">Text</option>
+            <option value="title">Title</option>
+        </select>
+    </div>
+    <div class="input-group">
+        <label for="mode">Mode:</label>
+        <select name="mode" data-template="templates:form-control" class="form-control">
+            <option value="any">Any</option>
+            <option value="all">All</option>
+            <option value="phrase">Phrase</option>
+            <option value="near">Near</option>
+        </select>
+    </div>
+    <div class="input-group-btn">
+        <label for="mode"/>
+        <button id="f-btn-search" type="submit" name="action" value="search" class="btn btn-primary">
+            <span class="glyphicon glyphicon-search"/> Search
+            </button>
+    </div>
+</div>

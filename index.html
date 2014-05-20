@@ -1,31 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content">
-    <div class="col-md-9">
-        <h1 data-template="config:app-title">Generated page</h1>
-        <table class="table table-striped" data-template="app:table-of-contents">
-            <tr>
-                <th>Short name</th>
-                <th>Title</th>
-            </tr>
-            <tbody>
-                <tr data-template="templates:each" data-template-from="laws" data-template-to="current">
-                    <td data-template="app:short-title">Short title</td>
-                    <td data-template="app:title">Title</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    <div class="col-md-3">
-        <h2>Search</h2>
-        <form action="search.html" class="form-inline">
-            <span class="input-group">
-                <input id="query-field" name="qu" type="text" class="templates:form-control form-control"/>
-                <span class="input-group-btn">
-                    <button id="f-btn-search" type="submit" name="action" value="search" class="btn btn-primary">
-                        <span class="glyphicon glyphicon-search"/> Search
-                    </button>
-                </span>
-            </span>
-        </form>
-    </div>
+    <form action="search.html" class="form-inline">
+        <div class="col-md-9">
+            <h1 data-template="config:app-title">Generated page</h1>
+            <table class="table table-striped" data-template="app:table-of-contents">
+                <thead>
+                    <tr>
+                        <th>Short name</th>
+                        <th>Title</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr data-template="templates:each" data-template-from="laws" data-template-to="current">
+                        <td data-template="app:short-title">Short title</td>
+                        <td data-template="app:title">Title</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-3">
+            <div class="templates:include?path=search-form.html"/>
+        </div>
+    </form>
 </div>

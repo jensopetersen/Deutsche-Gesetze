@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <meta xmlns="http://exist-db.org/xquery/repo">
-    <description>Deutsche Gesetze App - Wolfgang</description>
+    <description>Deutsche Gesetze App - Wolfgang (Modified)</description>
     <author>Wolfgang Meier</author>
     <website/>
     <status>alpha</status>
     <license>GNU-LGPL</license>
     <copyright>true</copyright>
     <type>application</type>
-    <target>wolfslaw</target>
+    <target>wolfslaw-mod</target>
     <prepare>pre-install.xql</prepare>
     <finish/>
+    <deployed>2014-03-14T07:41:17.075+01:00</deployed>
 </meta>

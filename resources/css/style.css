@@ -1,1 +1,36 @@
 /* Application styles could go here */
+
+.query-result {
+ color: gray;
+ margin: 1em;
+}
+
+.query-term {
+ color: #0083CB;   
+}
+
+.inputrow {
+    margin-top: 8px;
+}
+
+.inputrow label {
+    width: 60px;
+    display: block;
+    float: left;
+}
+
+mark {
+    background-color: #D6E9C6;
+}
+
+.input-group .form-control {
+    width: 60%;
+}
+
+label {
+    width: 7em;
+}
+
+.input-group-btn {
+    padding-top: 1em;
+}
