@@ -1,1 +1,25 @@
-<div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content"><h1>Search Results</h1><div data-template="app:search"><p class="alert alert-success">Found <b class="btn btn-default" data-template="app:result-count">NA</b> hits.</p><ul data-template="app:navigate"/><div data-template="app:retrieve-page"/><ul data-template="app:navigate"/></div></div>
+<?xml version="1.0" encoding="UTF-8"?>
+<div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content">
+    <div class="col-md-9">
+        <h1>Search Results</h1>
+        <div data-template="app:search">
+            <p class="alert alert-success">Found <b class="btn btn-default" data-template="app:result-count">NA</b> hits.</p>
+            <ul data-template="app:navigate"/>
+            <div data-template="app:retrieve-page"/>
+            <ul data-template="app:navigate"/>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <h2>Search</h2>
+        <form action="search.html" class="form-inline">
+            <span class="input-group">
+                <input id="query-field" name="qu" type="text" class="templates:form-control form-control"/>
+                <span class="input-group-btn">
+                    <button id="f-btn-search" type="submit" name="action" value="search" class="btn btn-primary">
+                        <span class="glyphicon glyphicon-search"/> Search
+                    </button>
+                </span>
+            </span>
+        </form>
+    </div>
+</div>

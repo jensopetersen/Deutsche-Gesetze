@@ -1,1 +1,13 @@
-<meta xmlns="http://exist-db.org/xquery/repo"><description>Deutsche Gesetze App - Wolfgang</description><author>Wolfgang Meier</author><website/><status>alpha</status><license>GNU-LGPL</license><copyright>true</copyright><type>application</type><target>wolfslaw</target><prepare>pre-install.xql</prepare><finish/></meta>
+<?xml version="1.0" encoding="UTF-8"?>
+<meta xmlns="http://exist-db.org/xquery/repo">
+    <description>Deutsche Gesetze App - Wolfgang</description>
+    <author>Wolfgang Meier</author>
+    <website/>
+    <status>alpha</status>
+    <license>GNU-LGPL</license>
+    <copyright>true</copyright>
+    <type>application</type>
+    <target>wolfslaw</target>
+    <prepare>pre-install.xql</prepare>
+    <finish/>
+</meta>

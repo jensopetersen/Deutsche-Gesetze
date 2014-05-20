@@ -1,1 +1,28 @@
-<div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content"><div data-template="app:load"><h1 class="page-header"><span data-template="app:title"/> (<span data-template="app:title-short"/>)</h1><div data-template="app:view"/></div></div>
+<?xml version="1.0" encoding="UTF-8"?>
+<div xmlns="http://www.w3.org/1999/xhtml" data-template="templates:surround" data-template-with="templates/page.html" data-template-at="content">
+    <div data-template="app:load">
+        <div class="col-md-9">
+            <h1 class="page-header">
+                <span data-template="app:title"/> (<span data-template="app:title-short"/>)</h1>
+            <div data-template="app:view"/>
+        </div>
+        <div class="col-md-3">
+            <h2>Search</h2>
+            <form action="search.html" class="form-inline">
+                <div class="input-group">
+                    <input id="query-field" name="qu" type="text" class="form-control" data-template="templates:form-control"/>
+                    <span class="input-group-btn">
+                        <button id="f-btn-search" type="submit" name="action" value="search" class="btn btn-primary">
+                            <span class="glyphicon glyphicon-search"/> Suche
+                        </button>
+                    </span>
+                </div>
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" checked="checked" name="law" data-template="app:current-law"/> in diesem Gesetz
+                    </label>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

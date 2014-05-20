@@ -10,7 +10,7 @@ declare namespace tei="http://www.tei-c.org/ns/1.0";
 declare
     %templates:wrap
     %templates:default("type", "text")
-function app:search($node as node(), $model as map(*), $qu as xs:string?, $type as xs:string) {
+function app:search($node as node(), $model as map(*), $qu as xs:string?, $type as xs:string, $law as xs:string?) {
     if (empty($qu) or $qu = "") then
         let $cached := session:get-attribute("wolfslaw.cached-data")
         return
@@ -21,22 +21,32 @@ function app:search($node as node(), $model as map(*), $qu as xs:string?, $type 
                     "results" := $cached
                 }
     else
+        let $context := 
+            if (empty($law) or $law = "") then
+                collection($config:app-root)
+            else
+                collection($config:app-root)/id($law)
+(:                collection($config:app-root)/tei:TEI[@xml:id = $law]:)
         let $results := 
             switch($type)
                 case "title" return
-                    collection($config:app-root)//tei:div[ft:query(tei:head, $qu)]
+                    $context//tei:div[ft:query(tei:head, $qu)]
                 default return
-                    collection($config:app-root)//tei:div[ft:query(., $qu)][not(tei:div)]
-        let $sorted :=
-            for $result in $results
-            order by ft:score($result) descending
-            return
-                $result
-        let $cached := session:set-attribute("wolfslaw.cached-data", $sorted)
+                    $context//tei:div[ft:query(., $qu)][not(tei:div)]
         return
-            map {
-                "results" := $sorted
-            }
+            if (empty($results)) then
+                app:suggest($qu)
+            else
+                let $sorted :=
+                    for $result in $results
+                    order by ft:score($result) descending
+                    return
+                        $result
+                let $cached := session:set-attribute("wolfslaw.cached-data", $sorted)
+                return
+                    map {
+                        "results" := $sorted
+                    }
 };
 
 declare
@@ -81,9 +91,12 @@ function app:retrieve-page($node as node(), $model as map(*), $start as xs:int) 
     <table class="table table-striped">
     {
         for $result in subsequence($model("results"), $start, 20)
+        let $shortTitle := $result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()
         return
             <tr>
-                <td>{$result/ancestor::tei:TEI//tei:titleStmt/tei:title[@type="short"]/text()}</td>
+                <td>
+                    <a class="btn btn-default" href="view.html?short={$shortTitle}#{generate-id($result)}">{$shortTitle}</a>
+                </td>
                 <td>{ app:process(util:expand($result)) }</td>
             </tr>
     }
@@ -145,6 +158,39 @@ function app:view($node as node(), $model as map(*)) {
     app:process($model("law")/tei:text/tei:body)
 };
 
+declare
+    %templates:wrap
+function app:current-law($node as node(), $model as map(*)) {
+    attribute value { $model("law")/@xml:id }
+};
+
+declare function app:get-terms($prefix as xs:string) {
+    util:index-keys(collection("/db/apps/wolfslaw")//tei:div[not(tei:div)], $prefix, 
+        function($term as xs:string, $count as xs:int+) {
+            <term name="{$term}" freq="{$count[1]}"/>
+        }, 
+        -1, "lucene-index")
+};
+
+declare function app:suggest($term as xs:string) {
+    <ul class="list-group">
+    {
+        let $words := app:get-terms(substring($term, 1, 2))
+        let $before := $words[@name < $term]
+        let $after := $words[@name > $term]
+        let $merged := (
+            subsequence($before, count($before) - 10),
+            subsequence($after, 1, 10)
+        )
+        for $term in $merged
+        return
+            <li class="list-group-item">
+            <a href="?qu={$term/@name}">{$term/@name/string()}</a> <span class="badge">{$term/@freq/string()}</span>
+            </li>
+    }
+    </ul>
+};
+
 declare function app:process($nodes as node()*) {
     for $node in $nodes
     return
@@ -154,7 +200,9 @@ declare function app:process($nodes as node()*) {
             case element(tei:body) return
                 app:process($node/*)
             case element(tei:div) return
-                <div>{app:process($node/node())}</div>
+                <div id="{generate-id($node)}">
+                    {app:process($node/node())}
+                </div>
             case element(tei:head) return
                 let $level := count($node/ancestor::tei:div)
                 return

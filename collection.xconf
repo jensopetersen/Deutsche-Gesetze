@@ -1,1 +1,15 @@
-<collection xmlns="http://exist-db.org/collection-config/1.0"><index xmlns:tei="http://www.tei-c.org/ns/1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema"><lucene><text qname="tei:div"/></lucene><range><create qname="tei:title"><field name="title-type" match="@type" type="xs:string"/><field name="title-text" type="xs:string" case="no"/></create></range></index></collection>
+<?xml version="1.0" encoding="UTF-8"?>
+<collection xmlns="http://exist-db.org/collection-config/1.0">
+    <index xmlns:tei="http://www.tei-c.org/ns/1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+        <lucene>
+            <analyzer id="nodia" class="org.exist.indexing.lucene.analyzers.NoDiacriticsStandardAnalyzer"/>
+            <text qname="tei:div" analyzer="nodia"/>
+        </lucene>
+        <range>
+            <create qname="tei:title">
+                <field name="title-type" match="@type" type="xs:string"/>
+                <field name="title-text" type="xs:string" case="no"/>
+            </create>
+        </range>
+    </index>
+</collection>
