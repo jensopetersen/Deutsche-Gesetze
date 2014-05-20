@@ -1,0 +1,1 @@
+<package xmlns="http://expath.org/ns/pkg" name="http://exist-db.org/apps/wolfslaw" abbrev="wolfslaw" version="0.1" spec="1.0"><title>Deutsche Gesetze App - Wolfgang</title><dependency package="http://exist-db.org/apps/shared"/></package>
