@@ -74,7 +74,6 @@ function app:search($node as node(), $model as map(*), $query as xs:string?, $ta
 declare function app:create-query() {
     let $query-string := request:get-parameter("query", ())
     let $query-string := normalize-space($query-string)
-    (:NB: not used!:)
     (:TODO: integrate mode!:)
     let $mode := request:get-parameter("mode", "any")
     let $luceneParse := local:parse-lucene($query-string)
@@ -384,135 +383,229 @@ declare function app:process($nodes as node()*) {
                 $node
 };
 
-(:@author: Ron Van Den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
 declare function local:parse-lucene($string) {
-    (: replace all symbolic booleans with lexical counterparts :)
-    if (matches($string, '[^\\](\|{2}|&amp;{2}|!) ')) then
-        let $rep := replace(
-                                    replace(
-                                        replace($string, '&amp;{2} ', 'AND ')
-                                    , '\|{2} ', 'OR ')
-                                , '! ', 'NOT ')
-        return local:parse-lucene($rep)
-    (: replace all booleans with '<AND/>|<OR/>|<NOT/>' :)
-    else if (matches($string, '[^<](AND|OR|NOT) ')) then
-        let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
-        return local:parse-lucene($rep)
-    (: replace all '+' modifiers with '<AND/>' :)
-    else if (matches($string, '(^|[^\w""''])\+[\w""''(]')) then
-        let $rep := replace($string, '(^|[^\w""''])\+([\w""''(])', '$1<AND type=_+_/>$2')
-        return local:parse-lucene($rep)
-    (: replace all '-' modifiers with '<NOT/>' :)
-    else if (matches($string, '(^|[^\w""''])-[\w""''(]')) then
-        let $rep := replace($string, '(^|[^\w""''])-([\w""''(])', '$1<NOT type=_-_/>$2')
-        return local:parse-lucene($rep)
-    (: replace round brackets with '<bool></bool>' :)
-    else if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')) then
-        let $rep := 
-            (: add @boost attribute when string ends in ^\d :)
-            if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))(<|\W|$)')) then
-                replace($string, '(^|\W|>)\((.*?)\)(\^(\d+))(<|\W|$)', '$1<bool boost=_$4_>$2</bool>$5')
-            else 
-                replace($string, '(^|\W|>)\((.*?)\)(<|\W|$)', '$1<bool>$2</bool>$3')
-        return local:parse-lucene($rep)
-    (: replace quoted phrases with '<near slop=""></bool>' :)
-    else if (matches($string, '(^|\W|>)(""|'').*?\2([~^]\d+)?(<|\W|$)')) then
-        let $rep := 
-            (: add @boost attribute when phrase ends in ^\d :)
-            if (matches($string, '(^|\W|>)(""|'').*?\2([\^]\d+)?(<|\W|$)')) then 
-                replace($string, '(^|\W|>)(""|'')(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near boost=_$5_>$3</near>$6')
-            (: add @slop attribute in other cases :)
-            else 
-                replace($string,  '(^|\W|>)(""|'')(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near slop=_$5_>$3</near>$6')
-        return local:parse-lucene($rep)
-    (: wrap fuzzy search strings in '<fuzzy min-similarity=""></fuzzy>' :)
-    else if (matches($string, '[\w-[<>]]+?~[\d.]*')) then
-        let $rep := replace($string, '([\w-[<>]]+?)~([\d.]*)', '<fuzzy min-similarity=_$2_>$1</fuzzy>')
-        return local:parse-lucene($rep)
-    (: wrap resulting string in '<query></query>' :)
-    else concat('<query>', replace(normalize-space($string), '_', '"'), '</query>')
+  (: replace all symbolic booleans with lexical counterparts :)
+  (:if '&&', '||' or '!' are used:)
+  if (matches($string, '[^\\](\|{2}|&amp;{2}|!) ')) 
+  	then
+    	let $rep := 
+    		replace(
+            replace(
+            replace(
+            	$string, '
+            &amp;{2} ', 'AND '), 
+            '\|{2} ', 'OR '), 
+            '! ', 'NOT ')
+    return local:parse-lucene($rep)                
+  else (: replace all booleans with '<AND/>|<OR/>|<NOT/>' :)
+  	if (matches($string, '[^<](AND|OR|NOT) ')) 
+  	then
+    	let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
+    	return local:parse-lucene($rep)
+    else (: replace all '+' modifiers with '<AND/>' :)
+    	if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]')) 
+    	then
+    		let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2')
+    		return local:parse-lucene($rep)
+    	else (: replace all '-' modifiers with '<NOT/>' :)
+    		if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]')) 
+    		then
+    			let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2')
+    			return local:parse-lucene($rep)
+    		else (: replace round brackets with '<bool></bool>' :)
+    		if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')) 
+    		then
+    			let $rep := 
+    			(: add @boost attribute when string ends in ^\d :)
+    				if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))(<|\W|$)')) 
+    				then replace($string, '(^|\W|>)\((.*?)\)(\^(\d+))(<|\W|$)', '$1<bool boost=_$4_>$2</bool>$5')
+    				else 
+    					replace($string, '(^|\W|>)\((.*?)\)(<|\W|$)', '$1<bool>$2</bool>$3')
+    			return local:parse-lucene($rep)
+    else (: replace quoted phrases with '<near slop=""></bool>' :)
+    	(:In Ron's script, a phrase could be enclosed in single quotation marks, but I don't think that's possible.:)
+    	if (matches($string, '(^|\W|>)(&quot;).*?\2([~^]\d+)?(<|\W|$)')) 
+    	then
+    		let $rep := 
+    			(: add @boost attribute when phrase ends in ^\d :)
+    			if (matches($string, '(^|\W|>)(&quot;).*?\2([\^]\d+)?(<|\W|$)')) 
+    			then replace($string, '(^|\W|>)(&quot;)(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near boost=_$5_>$3</near>$6')
+      (: add @slop attribute in other cases :)
+      else replace($string, '(^|\W|>)(&quot;)(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near slop=_$5_>$3</near>$6')
+      	return local:parse-lucene($rep)
+  			else (: wrap fuzzy search strings in '<fuzzy min-similarity=""></fuzzy>' :)
+  				if (matches($string, '[\w-[<>]]+?~[\d.]*')) 
+  				then
+  					let $rep := replace($string, '([\w-[<>]]+?)~([\d.]*)', '<fuzzy min-similarity=_$2_>$1</fuzzy>')
+					return local:parse-lucene($rep)
+				else (: wrap resulting string in '<query></query>' :)
+					concat('<query>', replace(normalize-space($string), '_', '"'), '</query>')
 };
 
-(:@author: Ron Van Den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+
+(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
 declare function local:lucene2xml($node) {
-    typeswitch ($node)
-        case element(query) return 
-            element { node-name($node)} {
-                element bool {
-                    $node/node()/local:lucene2xml(.)
-                }
-            }
-        case element(AND) return ()
-        case element(OR) return ()
-        case element(NOT) return ()
-        case element(bool) return
-            if ($node/parent::near) 
-            then concat("(", $node, ")") 
-            else element {node-name($node)} {
-                $node/@*,
-                $node/node()/local:lucene2xml(.)
-            }
-        case element() return
-            let $name := 
-                if (($node/self::phrase|$node/self::near)[not(@slop > 0)]) 
-                then 'phrase' 
-                else node-name($node)
-            return 
-                element { $name } {
+  typeswitch ($node)
+    case element(query) return 
+      element { node-name($node)} {
+        element bool {
+          $node/node()/local:lucene2xml(.)
+        }
+      }
+    case element(AND) return ()
+    case element(OR) return ()
+    case element(NOT) return ()
+    case element(bool) return
+      if ($node/parent::near) then
+        concat("(", $node, ")") 
+      else element {node-name($node)} {
+        $node/@*,
+        $node/node()/local:lucene2xml(.)
+      }
+    case element() return
+      let $name := 
+        if (($node/self::phrase|$node/self::near)[not(@slop > 0)]) 
+        then 'phrase' 
+        else node-name($node)
+      return 
+        (: Ron begins: element { $name } {
+          $node/@*,
+          if (($node/following-sibling::*[1]|
+               $node/preceding-sibling::*[1])
+              [self::AND or self::OR or self::NOT]) then
+            attribute occur { 
+              if ($node/preceding-sibling::*[1][self::AND]) then 'must'
+              else if ($node/preceding-sibling::*[1][self::NOT]) then 'not'
+              else if ($node/following-sibling::*[1]
+                       [self::AND or self::OR or self::NOT][not(@type)]) then 'should' 
+              else 'should' :Ron ends:)
+            element { $name } {
                     $node/@*,
-                    if (($node/following-sibling::*[1]|
-                             $node/preceding-sibling::*[1])
-                            [self::AND or self::OR or self::NOT]) 
-                     then
-                         attribute occur { 
-                             if ($node/preceding-sibling::*[1][self::AND]) 
-                             then 'must'
-                             else 
-                                 if ($node/preceding-sibling::*[1][self::NOT]) 
-                                 then 'not'
-                                 else 
-                                     if ($node/following-sibling::*[1]
-                                              [self::AND or self::OR or self::NOT][not(@type)]) 
-                                     then 'should' 
-                     else 'should'
-                        }
-                    else (),
-                    $node/node()/local:lucene2xml(.)
-                }
-        case text() return 
-            if ($node/parent::*[self::query or self::bool]) 
-            then
-                for $tok at $p in tokenize($node, '\s+')[normalize-space()]
-                let $el-name := 
-(:                        if (matches($node, '((^|[^\\])[.?*+()\[\]\\^]|\$$)')):)
+                    if (($node/following-sibling::*[1] | $node/preceding-sibling::*[1])
+                            [self::AND or self::OR or self::NOT])
+                    then
+                        attribute occur { 
+                            if ($node/preceding-sibling::*[1][self::AND]) 
+                            then 'must'
+                            else 
+                                if ($node/preceding-sibling::*[1][self::NOT]) 
+                                then 'not'
+                                else 
+                                    if ($node/following-sibling::*[1]
+                                            [self::AND or self::OR or self::NOT][not(@type)]) 
+                                    then 'should' (:must?:) 
+                                    else 'should'
+            }
+          else (),
+          $node/node()/local:lucene2xml(.)
+        }
+    case text() return 
+      if ($node/parent::*[self::query or self::bool]) 
+      then
+      	for $tok at $p in tokenize($node, '\s+')[normalize-space()]
+        (: here is the place for further differentiation 
+           between  term / wildcard / regex elements :)
+        (: using regex-regex detection (?): 
+           matches($string, '((^|[^\\])[.?*+()\[\]\\^]|\$$)') :)
+        (: Ron begins: let $el-name := 'term' :Ron ends:)
+                        let $el-name := 
                     if (matches($node, '((^|[^\\])[?*]|\$$)'))
                     then 'wildcard'
                     else 
                         if (matches($node, '((^|[^\\])[.]|\$$)'))
                         then 'regex'
                         else 'term'
-                return element { $el-name } {
-                    attribute occur {
-                        if ($p = 1 and $node/preceding-sibling::*[1][self::AND]) 
-                        then 'must'
-                        else 
-                            if ($p = 1 and $node/preceding-sibling::*[1][self::NOT]) 
-                            then 'not'
-                            else 
-                                if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) 
-                                then 'should'
-                                else 'should'
-                    },
-                    if (matches($tok, '(.*?)(\^(\d+))(\W|$)')) 
-                    then
-                        attribute boost {
-                            replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3')
-                        }
-                        else (),
-                    normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1'))
-                }
+        return element { $el-name } {
+          attribute occur {
+          (:if the term follows AND:)
+            if ($p = 1 and $node/preceding-sibling::*[1][self::AND]) 
+            then 'must'
             else 
-                normalize-space($node)
-    default return
-        $node
+            	(:if the term follows NOT:)
+            	if ($p = 1 and $node/preceding-sibling::*[1][self::NOT])
+            	then 'not'
+            	else (:if the term is preceded by AND:)
+            		if ($p = 1 and $node/following-sibling::*[1][self::AND])
+            		then 'must'
+            		(:Ron begins: if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should':Ron ends:)
+            (:if the term follows OR and is preceded by OR or NOT, or if it is standing on its own:)
+            else 'should'
+          },
+          if (matches($tok, '(.*?)(\^(\d+))(\W|$)')) then
+            attribute boost {
+              replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3')
+            }
+            else (),
+          normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1'))
+        }
+      else 
+        normalize-space($node)
+  default return
+    $node
 };
+
+(:Lucene supports single and multiple character wildcard searches within single terms (not within phrase queries).:)
+
+(:
+NB: Problems:
+
+(fillet OR malice) AND snake
+
+should return
+
+<query>
+<bool>
+<bool occur="must">
+<term occur="should">fillet</term>
+<term occur="should">malice</term>
+</bool>
+<term occur="must">snake</term>
+</bool>
+</query>
+
+returns
+
+<query>
+<bool>
+<bool>
+<term occur="should">fillet</term>
+<term occur="should">malice</term>
+</bool>
+<term occur="must">snake</term>
+</bool>
+</query>
+
+NOT OK (AND should give "must" to <bool>)
+
+#
+
+(fillet OR "mal(ic)e done"~1) AND snake^4
+
+should return
+
+<query>
+<bool>
+<bool occur="must">
+<term occur="should">fillet</term>
+<near occur="should" slop="1">mal(ic)e done</near>
+</bool>
+<term occur="must" boost="4">snake</term>
+</bool>
+</query
+
+returns
+
+<query>
+<bool>
+<bool>
+<term occur="should">fillet</term>
+<near slop="1" occur="should">mal(ic)e done</near>
+</bool>
+<term occur="must" boost="4">snake</term>
+</bool>
+</query>
+
+NOT OK (should have "must" on second <bool>)
+:)
