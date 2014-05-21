@@ -405,18 +405,14 @@ declare function local:parse-lucene($string) {
             let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
             return local:parse-lucene($rep)
     else (: replace all '+' modifiers with '<AND/>' :)
-        (:Ron 2011-08-09: if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]')):)
-        if (matches($string, '(^|[^\&quot;])\+[\&quot;(]'))
+        if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]'))
         then
-            (:Ron 2011-08-09: let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2'):)
-            let $rep := replace($string, '(^|[^\&quot;])\+([\&quot;(])', '$1<AND type=_+_/>$2')
+            let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2')
             return local:parse-lucene($rep)
         else (: replace all '-' modifiers with '<NOT/>' :)
-            (:Ron 2011-08-09: if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]')):)
-            if (matches($string, '(^|[^\&quot;])-[\&quot;(]'))
+            if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]'))
             then
-                (:Ron 2011-08-09: let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2'):)
-                let $rep := replace($string, '(^|[^\&quot;])-([\&quot;(])', '$1<NOT type=_-_/>$2')
+                let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2')
                 return local:parse-lucene($rep)
             else (: replace round brackets with '<bool></bool>' :)
                 (:Ron 2011-08-09: if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')):)
@@ -460,33 +456,30 @@ declare function local:lucene2xml($node) {
     case element(AND) return ()
     case element(OR) return ()
     case element(NOT) return ()
-    case element(bool) return
+    (:Ron 2011-08-09: case element(bool) return
         if ($node/parent::near) 
         then concat("(", $node, ")") 
         else element {node-name($node)} {
             $node/@*,
             $node/node()/local:lucene2xml(.)
-        }
+        }:)
     case element() return
         let $name := 
             if (($node/self::phrase|$node/self::near)[not(@slop > 0)]) 
             then 'phrase' 
             else node-name($node)
         return 
-        (: Ron begins: element { $name } {
+        (: Ron: element { $name } {
           $node/@*,
-          if (($node/following-sibling::*[1]|
-               $node/preceding-sibling::*[1])
-              [self::AND or self::OR or self::NOT]) then
+          if (($node/following-sibling::*[1]|$node/preceding-sibling::*[1])[self::AND or self::OR or self::NOT]) then
             attribute occur { 
               if ($node/preceding-sibling::*[1][self::AND]) then 'must'
               else if ($node/preceding-sibling::*[1][self::NOT]) then 'not'
-              else if ($node/following-sibling::*[1]
-                       [self::AND or self::OR or self::NOT][not(@type)]) then 'should' 
-              else 'should' :Ron ends:)
+              else if ($node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should' 
+              else 'should':)
             element { $name } {
                 $node/@*,
-                    if (($node/following-sibling::*[1] | $node/preceding-sibling::*[1])[self::AND or self::OR or self::NOT])
+                    if (($node/following-sibling::*[1] | $node/preceding-sibling::*[1])[self::AND or self::OR or self::NOT or self::bool])
                     then
                         attribute occur { 
                             if ($node/preceding-sibling::*[1][self::AND]) 
@@ -495,9 +488,12 @@ declare function local:lucene2xml($node) {
                                 if ($node/preceding-sibling::*[1][self::NOT]) 
                                 then 'not'
                                 else 
-                                    if ($node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) 
-                                    then 'should' (:must?:) 
-                                    else 'should'
+                                    if ($node[self::bool]and $node/following-sibling::*[1][self::AND])
+                                    then 'must'
+                                    else 
+                                        if ($node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) 
+                                        then 'should' (:must?:) 
+                                        else 'should'
                         }
                     else ()
                     ,
@@ -509,12 +505,13 @@ declare function local:lucene2xml($node) {
             for $tok at $p in tokenize($node, '\s+')[normalize-space()]
             (: here is the place for further differentiation between  term / wildcard / regex elements :)
             (: using regex-regex detection (?): matches($string, '((^|[^\\])[.?*+()\[\]\\^]|\$$)') :)
-            (: Ron begins: let $el-name := 'term' :Ron ends:)
                 let $el-name := 
-                    if (matches($node, '((^|[^\\])[?*]|\$$)'))
+                    (:Ron old: if (matches($node, '((^|[^\\])[?*]|\$$)')):)
+                    if (matches($tok, '(^|[^\\])[$^|+\p{P}-[,]]'))
                     then 'wildcard'
                     else 
-                        if (matches($node, '((^|[^\\])[.]|\$$)'))
+                        (:Ron old: if (matches($tok, '((^|[^\\])[.]|\$$)')):)
+                        if (matches($tok, '(^|[^\\.])[?*+]|\[!'))
                         then 'regex'
                         else 'term'
                 return 
@@ -527,6 +524,7 @@ declare function local:lucene2xml($node) {
                             (:if the term follows NOT:)
                             if ($p = 1 and $node/preceding-sibling::*[1][self::NOT])
                             then 'not'
+                            (:Ron: else if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should' (\:'must':\):)
                             else (:if the term is preceded by AND:)
                                 if ($p = 1 and $node/following-sibling::*[1][self::AND])
                                 then 'must'
@@ -548,67 +546,3 @@ declare function local:lucene2xml($node) {
     default return
         $node
 };
-
-(:Lucene supports single and multiple character wildcard searches within single terms (not within phrase queries).:)
-
-(:
-NB: Problems:
-
-(fillet OR malice) AND snake
-
-should return
-
-<query>
-<bool>
-<bool occur="must">
-<term occur="should">fillet</term>
-<term occur="should">malice</term>
-</bool>
-<term occur="must">snake</term>
-</bool>
-</query>
-
-returns
-
-<query>
-<bool>
-<bool>
-<term occur="should">fillet</term>
-<term occur="should">malice</term>
-</bool>
-<term occur="must">snake</term>
-</bool>
-</query>
-
-NOT OK (AND should give "must" to <bool>)
-
-#
-
-(fillet OR "mal(ic)e done"~1) AND snake^4
-
-should return
-
-<query>
-<bool>
-<bool occur="must">
-<term occur="should">fillet</term>
-<near occur="should" slop="1">mal(ic)e done</near>
-</bool>
-<term occur="must" boost="4">snake</term>
-</bool>
-</query
-
-returns
-
-<query>
-<bool>
-<bool>
-<term occur="should">fillet</term>
-<near slop="1" occur="should">mal(ic)e done</near>
-</bool>
-<term occur="must" boost="4">snake</term>
-</bool>
-</query>
-
-NOT OK (should have "must" on second <bool>)
-:)
