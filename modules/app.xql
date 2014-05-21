@@ -384,10 +384,10 @@ declare function app:process($nodes as node()*) {
 };
 
 (:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
-(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+(:In Ron's script, single quotation marks can mark phrase and near searches. I do not think this is in accordance with Lucene search syntax (think of all the uses of the apostrophe, whereas double quotation marks are - as far as I can see - only used for inches on their own), so I have converted these into &quot;.:)
 declare function local:parse-lucene($string) {
     (: replace all symbolic booleans with lexical counterparts :)
-    (:if '&&', '||' or '!' are used:)
+    (: if '&&', '||' or '!' are used :)
     if (matches($string, '[^\\](\|{2}|&amp;{2}|!) ')) 
     then
         let $rep := 
@@ -405,17 +405,22 @@ declare function local:parse-lucene($string) {
             let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
             return local:parse-lucene($rep)
     else (: replace all '+' modifiers with '<AND/>' :)
-        if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]')) 
+        (:Ron 2011-08-09: if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]')):)
+        if (matches($string, '(^|[^\&quot;])\+[\&quot;(]'))
         then
-            let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2')
+            (:Ron 2011-08-09: let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2'):)
+            let $rep := replace($string, '(^|[^\&quot;])\+([\&quot;(])', '$1<AND type=_+_/>$2')
             return local:parse-lucene($rep)
         else (: replace all '-' modifiers with '<NOT/>' :)
-            if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]')) 
+            (:Ron 2011-08-09: if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]')):)
+            if (matches($string, '(^|[^\&quot;])-[\&quot;(]'))
             then
-                let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2')
+                (:Ron 2011-08-09: let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2'):)
+                let $rep := replace($string, '(^|[^\&quot;])-([\&quot;(])', '$1<NOT type=_-_/>$2')
                 return local:parse-lucene($rep)
             else (: replace round brackets with '<bool></bool>' :)
-                if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')) 
+                (:Ron 2011-08-09: if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')):)
+                if (matches($string, '(^|[\W-[\\]]|>)\(.*?[^\\]\)(\^(\d+))?(<|\W|$)'))                
                 then
                     let $rep := 
                         (: add @boost attribute when string ends in ^\d :)
@@ -424,7 +429,6 @@ declare function local:parse-lucene($string) {
                         else replace($string, '(^|\W|>)\((.*?)\)(<|\W|$)', '$1<bool>$2</bool>$3')
                     return local:parse-lucene($rep)
                 else (: replace quoted phrases with '<near slop=""></bool>' :)
-                    (:In Ron's script, a phrase could be enclosed in single quotation marks, but I don't think that's possible.:)
                     if (matches($string, '(^|\W|>)(&quot;).*?\2([~^]\d+)?(<|\W|$)')) 
                     then
                         let $rep := 
