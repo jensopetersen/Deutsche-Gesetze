@@ -415,7 +415,6 @@ declare function local:parse-lucene($string) {
                 let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2')
                 return local:parse-lucene($rep)
             else (: replace round brackets with '<bool></bool>' :)
-                (:Ron 2011-08-09: if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))?(<|\W|$)')):)
                 if (matches($string, '(^|[\W-[\\]]|>)\(.*?[^\\]\)(\^(\d+))?(<|\W|$)'))                
                 then
                     let $rep := 
@@ -456,27 +455,12 @@ declare function local:lucene2xml($node) {
     case element(AND) return ()
     case element(OR) return ()
     case element(NOT) return ()
-    (:Ron 2011-08-09: case element(bool) return
-        if ($node/parent::near) 
-        then concat("(", $node, ")") 
-        else element {node-name($node)} {
-            $node/@*,
-            $node/node()/local:lucene2xml(.)
-        }:)
     case element() return
         let $name := 
             if (($node/self::phrase|$node/self::near)[not(@slop > 0)]) 
             then 'phrase' 
             else node-name($node)
-        return 
-        (: Ron: element { $name } {
-          $node/@*,
-          if (($node/following-sibling::*[1]|$node/preceding-sibling::*[1])[self::AND or self::OR or self::NOT]) then
-            attribute occur { 
-              if ($node/preceding-sibling::*[1][self::AND]) then 'must'
-              else if ($node/preceding-sibling::*[1][self::NOT]) then 'not'
-              else if ($node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should' 
-              else 'should':)
+        return
             element { $name } {
                 $node/@*,
                     if (($node/following-sibling::*[1] | $node/preceding-sibling::*[1])[self::AND or self::OR or self::NOT or self::bool])
@@ -506,11 +490,9 @@ declare function local:lucene2xml($node) {
             (: here is the place for further differentiation between  term / wildcard / regex elements :)
             (: using regex-regex detection (?): matches($string, '((^|[^\\])[.?*+()\[\]\\^]|\$$)') :)
                 let $el-name := 
-                    (:Ron old: if (matches($node, '((^|[^\\])[?*]|\$$)')):)
                     if (matches($tok, '(^|[^\\])[$^|+\p{P}-[,]]'))
                     then 'wildcard'
                     else 
-                        (:Ron old: if (matches($tok, '((^|[^\\])[.]|\$$)')):)
                         if (matches($tok, '(^|[^\\.])[?*+]|\[!'))
                         then 'regex'
                         else 'term'
@@ -524,11 +506,9 @@ declare function local:lucene2xml($node) {
                             (:if the term follows NOT:)
                             if ($p = 1 and $node/preceding-sibling::*[1][self::NOT])
                             then 'not'
-                            (:Ron: else if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should' (\:'must':\):)
                             else (:if the term is preceded by AND:)
                                 if ($p = 1 and $node/following-sibling::*[1][self::AND])
                                 then 'must'
-                                    (:Ron begins: if ($p = 1 and $node/following-sibling::*[1][self::AND or self::OR or self::NOT][not(@type)]) then 'should':Ron ends:)
                                     (:if the term follows OR and is preceded by OR or NOT, or if it is standing on its own:)
                                 else 'should'
                     }
