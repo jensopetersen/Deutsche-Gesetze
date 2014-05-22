@@ -75,14 +75,14 @@ declare function app:create-query() {
     let $query-string := request:get-parameter("query", ())
     let $query-string := normalize-space($query-string)
     let $mode := request:get-parameter("mode", "any")
-    let $query-type :=
+    let $query:=
         (:TODO: refine regex:)
         if (functx:contains-any-of($query-string, ('AND', 'OR', 'NOT', '+', '-', '!', '~', '^')) and $mode eq 'any')
-        then 'lucene'
-        else 'mode'
-    let $xml-query :=
-        if ($query-type eq 'mode')
-        then
+        then 
+            let $luceneParse := local:parse-lucene($query-string)
+            let $luceneXML := util:parse($luceneParse)
+            return local:lucene2xml($luceneXML/node())
+        else
             let $last-item := tokenize($query-string, '\s')[last()]
             let $last-item :=
                 if ($last-item castable as xs:integer)
@@ -101,55 +101,41 @@ declare function app:create-query() {
             let $query-string := tokenize($query-string, '\s')
             let $query-string := if ($last-item-type) then string-join(subsequence($query-string, 1, count($query-string) - 1), ' ') else $query-string
             return
-            <query>
-                {
-                    if ($mode eq 'any') then
-                        for $term in tokenize($query-string, '\s')
-                        return <term occur="should">{$term}</term>
-                    else if ($mode eq 'all') then
-                        <bool>
-                        {
+                <query>
+                    {
+                        if ($mode eq 'any') then
                             for $term in tokenize($query-string, '\s')
-                            return <term occur="must">{$term}</term>
-                        }
-                        </bool>
-                    else 
-                        if ($mode eq 'phrase') 
-                        then <phrase>{$query-string}</phrase>
-                        else
-                            if ($mode eq 'near-unordered')
-                            then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="no">{$query-string}</near>
-                            else 
-                                if ($mode eq 'near-ordered')
-                                then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="yes">{$query-string}</near>
+                            return <term occur="should">{$term}</term>
+                        else if ($mode eq 'all') then
+                            <bool>
+                            {
+                                for $term in tokenize($query-string, '\s')
+                                return <term occur="must">{$term}</term>
+                            }
+                            </bool>
+                        else 
+                            if ($mode eq 'phrase') 
+                            then <phrase>{$query-string}</phrase>
+                            else
+                                if ($mode eq 'near-unordered')
+                                then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="no">{$query-string}</near>
                                 else 
-                                    if ($mode eq 'fuzzy')
-                                    then <fuzzy min-similarity="{if ($last-item-type eq 'decimal') then $last-item else 0.5}">{$query-string}</fuzzy>
+                                    if ($mode eq 'near-ordered')
+                                    then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="yes">{$query-string}</near>
                                     else 
-                                        if ($mode eq 'wildcard')
-                                        then <wildcard>{$query-string}</wildcard>
+                                        if ($mode eq 'fuzzy')
+                                        then <fuzzy min-similarity="{if ($last-item-type eq 'decimal') then $last-item else 0.5}">{$query-string}</fuzzy>
                                         else 
-                                            if ($mode eq 'regex')
-                                            then <regex>{$query-string}</regex>
-                                            else ()
-                }
-                </query>
-        else ()
-    (:TODO: Branch!:)
-    let $luceneParse := 
-        if ($query-type eq 'lucene')
-        then local:parse-lucene($query-string)
-        else ()
-    let $luceneXML := 
-        if ($luceneParse)
-        then util:parse($luceneParse)
-        else ()
-    let $lucene-query := 
-        if ($luceneXML)
-        then local:lucene2xml($luceneXML/node())
-        else ()
-    return 
-        if ($lucene-query) then $lucene-query else $xml-query
+                                            if ($mode eq 'wildcard')
+                                            then <wildcard>{$query-string}</wildcard>
+                                            else 
+                                                if ($mode eq 'regex')
+                                                then <regex>{$query-string}</regex>
+                                                else ()
+                    
+                    }</query>
+        return $query
+    
 };
 
 declare
