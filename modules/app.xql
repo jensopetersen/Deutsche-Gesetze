@@ -75,14 +75,81 @@ declare function app:create-query() {
     let $query-string := request:get-parameter("query", ())
     let $query-string := normalize-space($query-string)
     let $mode := request:get-parameter("mode", "any")
-    let $log := util:log("DEBUG", ("##$modexxx): ", $mode))
-    let $luceneParse := local:parse-lucene($query-string, $mode)
-    let $log := util:log("DEBUG", ("##$luceneParsexxx): ", $luceneParse))
-    let $luceneXML := util:parse($luceneParse)
-    let $log := util:log("DEBUG", ("##$luceneXMLxxx): ", $luceneXML))
-    let $query := local:lucene2xml($luceneXML/node(), $mode)
-    let $log := util:log("DEBUG", ("##$queryxxx): ", $query))
-        return $query
+    let $query-type :=
+        (:TODO: refine regex:)
+        if (functx:contains-any-of($query-string, ('AND', 'OR', 'NOT', '+', '-', '!', '~', '^')) and $mode eq 'any')
+        then 'lucene'
+        else 'mode'
+    let $xml-query :=
+        if ($query-type eq 'mode')
+        then
+            let $last-item := tokenize($query-string, '\s')[last()]
+            let $last-item :=
+                if ($last-item castable as xs:integer)
+                then $last-item cast as xs:integer
+                else
+                    if ($last-item castable as xs:decimal)
+                    then $last-item cast as xs:decimal
+                    else ()
+            let $last-item-type :=
+                if ($last-item instance of xs:integer)
+                then 'integer'
+                else
+                    if ($last-item instance of xs:decimal and $last-item < 1 and $last-item > 0)
+                    then 'decimal'
+                    else ()
+            let $query-string := tokenize($query-string, '\s')
+            let $query-string := if ($last-item-type) then string-join(subsequence($query-string, 1, count($query-string) - 1), ' ') else $query-string
+            return
+            <query>
+                {
+                    if ($mode eq 'any') then
+                        for $term in tokenize($query-string, '\s')
+                        return <term occur="should">{$term}</term>
+                    else if ($mode eq 'all') then
+                        <bool>
+                        {
+                            for $term in tokenize($query-string, '\s')
+                            return <term occur="must">{$term}</term>
+                        }
+                        </bool>
+                    else 
+                        if ($mode eq 'phrase') 
+                        then <phrase>{$query-string}</phrase>
+                        else
+                            if ($mode eq 'near-unordered')
+                            then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="no">{$query-string}</near>
+                            else 
+                                if ($mode eq 'near-ordered')
+                                then <near slop="{if ($last-item-type eq 'integer') then $last-item else 5}" ordered="yes">{$query-string}</near>
+                                else 
+                                    if ($mode eq 'fuzzy')
+                                    then <fuzzy min-similarity="{if ($last-item-type eq 'decimal') then $last-item else 0.5}">{$query-string}</fuzzy>
+                                    else 
+                                        if ($mode eq 'wildcard')
+                                        then <wildcard>{$query-string}</wildcard>
+                                        else 
+                                            if ($mode eq 'regex')
+                                            then <regex>{$query-string}</regex>
+                                            else ()
+                }
+                </query>
+        else ()
+    (:TODO: Branch!:)
+    let $luceneParse := 
+        if ($query-type eq 'lucene')
+        then local:parse-lucene($query-string)
+        else ()
+    let $luceneXML := 
+        if ($luceneParse)
+        then util:parse($luceneParse)
+        else ()
+    let $lucene-query := 
+        if ($luceneXML)
+        then local:lucene2xml($luceneXML/node())
+        else ()
+    return 
+        if ($lucene-query) then $lucene-query else $xml-query
 };
 
 declare
@@ -356,9 +423,8 @@ declare function app:process($nodes as node()*) {
                 $node
 };
 
-(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
-(:In Ron's script, single quotation marks can mark phrase and near searches. I do not think this is in accordance with Lucene search syntax (think of all the uses of the apostrophe, whereas double quotation marks are - as far as I can see - only used for inches on their own), so I have converted these into &quot;.:)
-declare function local:parse-lucene($string as xs:string, $mode as xs:string) {
+(:based on Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+declare function local:parse-lucene($string as xs:string) {
     (: replace all symbolic booleans with lexical counterparts :)
     (: if '&&', '||' or '!' are used :)
     if (matches($string, '[^\\](\|{2}|&amp;{2}|!) ')) 
@@ -371,23 +437,23 @@ declare function local:parse-lucene($string as xs:string, $mode as xs:string) {
             '&amp;{2} ', 'AND '), 
             '\|{2} ', 'OR '), 
             '! ', 'NOT ')
-        return local:parse-lucene($rep, $mode)                
+        return local:parse-lucene($rep)                
     else (: replace all booleans with '<AND/>|<OR/>|<NOT/>' :)
         if (matches($string, '[^<](AND|OR|NOT) ')) 
         then
             let $rep := replace($string, '(AND|OR|NOT) ', '<$1/>')
-            return local:parse-lucene($rep, $mode)
+            return local:parse-lucene($rep)
     else (: replace all '+' modifiers with '<AND/>' :)
         if (matches($string, '(^|[^\w&quot;])\+[\w&quot;(]'))
         then
             let $rep := replace($string, '(^|[^\w&quot;])\+([\w&quot;(])', '$1<AND type=_+_/>$2')
-            return local:parse-lucene($rep, $mode)
+            return local:parse-lucene($rep)
         else (: replace all '-' modifiers with '<NOT/>' :)
             if (matches($string, '(^|[^\w&quot;])-[\w&quot;(]'))
             then
                 let $rep := replace($string, '(^|[^\w&quot;])-([\w&quot;(])', '$1<NOT type=_-_/>$2')
-                return local:parse-lucene($rep, $mode)
-            else (: replace round brackets with '<bool></bool>' :)
+                return local:parse-lucene($rep)
+            else (: replace parentheses with '<bool></bool>' :)
                 if (matches($string, '(^|[\W-[\\]]|>)\(.*?[^\\]\)(\^(\d+))?(<|\W|$)'))                
                 then
                     let $rep := 
@@ -395,7 +461,7 @@ declare function local:parse-lucene($string as xs:string, $mode as xs:string) {
                         if (matches($string, '(^|\W|>)\(.*?\)(\^(\d+))(<|\W|$)')) 
                         then replace($string, '(^|\W|>)\((.*?)\)(\^(\d+))(<|\W|$)', '$1<bool boost=_$4_>$2</bool>$5')
                         else replace($string, '(^|\W|>)\((.*?)\)(<|\W|$)', '$1<bool>$2</bool>$3')
-                    return local:parse-lucene($rep, $mode)
+                    return local:parse-lucene($rep)
                 else (: replace quoted phrases with '<near slop=""></bool>' :)
                     if (matches($string, '(^|\W|>)(&quot;).*?\2([~^]\d+)?(<|\W|$)')) 
                     then
@@ -405,24 +471,24 @@ declare function local:parse-lucene($string as xs:string, $mode as xs:string) {
                             then replace($string, '(^|\W|>)(&quot;)(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near boost=_$5_>$3</near>$6')
                             (: add @slop attribute in other cases :)
                             else replace($string, '(^|\W|>)(&quot;)(.*?)\2([~^](\d+))?(<|\W|$)', '$1<near slop=_$5_>$3</near>$6')
-                        return local:parse-lucene($rep, $mode)
+                        return local:parse-lucene($rep)
                     else (: wrap fuzzy search strings in '<fuzzy min-similarity=""></fuzzy>' :)
                         if (matches($string, '[\w-[<>]]+?~[\d.]*')) 
                         then
                             let $rep := replace($string, '([\w-[<>]]+?)~([\d.]*)', '<fuzzy min-similarity=_$2_>$1</fuzzy>')
-                            return local:parse-lucene($rep, $mode)
+                            return local:parse-lucene($rep)
                         else (: wrap resulting string in '<query></query>' :)
                             concat('<query>', replace(normalize-space($string), '_', '"'), '</query>')
 };
 
 
-(:@author: Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
-declare function local:lucene2xml($node as item(), $mode as xs:string) {
+(:based on Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
+declare function local:lucene2xml($node as item()) {
     typeswitch ($node)
         case element(query) return 
             element { node-name($node)} {
             element bool {
-            $node/node()/local:lucene2xml(., $mode)
+            $node/node()/local:lucene2xml(.)
         }
     }
     case element(AND) return ()
@@ -454,7 +520,7 @@ declare function local:lucene2xml($node as item(), $mode as xs:string) {
                         }
                     else ()
                     ,
-                    $node/node()/local:lucene2xml(., $mode)
+                    $node/node()/local:lucene2xml(.)
         }
     case text() return
         if ($node/parent::*[self::query or self::bool]) 
