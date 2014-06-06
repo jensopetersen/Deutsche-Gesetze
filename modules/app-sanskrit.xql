@@ -15,7 +15,6 @@ declare function functx:contains-any-of
    some $searchString in $searchStrings
    satisfies contains($arg,$searchString)
  } ;
- 
 
 (:modified by applying functx:escape-for-regex() :)
 declare function functx:number-of-matches 
@@ -31,6 +30,8 @@ declare function functx:escape-for-regex
    replace($arg,
            '(\.|\[|\]|\\|\||\-|\^|\$|\?|\*|\+|\{|\}|\(|\))','\\$1')
  } ;
+ 
+ declare variable $app:LANG := 'sanskrit';
 
 declare
     %templates:wrap
@@ -93,11 +94,13 @@ declare function app:create-query() {
     let $mode := request:get-parameter("mode", "any")
     let $query:=
         (:TODO: refine regex:)
-        if (functx:contains-any-of($query-string, ('AND', 'OR', 'NOT', '+', '-', '!', '~', '^')) and $mode eq 'any')
+        if (functx:contains-any-of($query-string, ('AND', 'OR', 'NOT', '+', '-', '!', '~', '^')) or $mode = ('regex', 'any'))
         then 
             let $luceneParse := local:parse-lucene($query-string)
             let $luceneXML := util:parse($luceneParse)
-            return local:lucene2xml($luceneXML/node())
+            let $lucene2xml := local:lucene2xml($luceneXML/node(), $mode)
+            let $log := util:log("DEBUG", ("##$lucene2xmlxxx): ", $lucene2xml))
+            return $lucene2xml
         else
             let $last-item := tokenize($query-string, '\s')[last()]
             let $last-item :=
@@ -116,7 +119,7 @@ declare function app:create-query() {
                     else ()
             let $query-string := tokenize($query-string, '\s')
             let $query-string := if ($last-item-type) then string-join(subsequence($query-string, 1, count($query-string) - 1), ' ') else $query-string
-            return
+            let $query := 
                 <query>
                     {
                         if ($mode eq 'any') then
@@ -144,12 +147,15 @@ declare function app:create-query() {
                                         else 
                                             if ($mode eq 'wildcard')
                                             then <wildcard>{$query-string}</wildcard>
-                                            else 
+                                            else
+                                                (:Actually, this step is not used, since regex searches switch to parsing:)
                                                 if ($mode eq 'regex')
                                                 then <regex>{$query-string}</regex>
                                                 else ()
                     
                     }</query>
+            let $log := util:log("DEBUG", ("##$queryxxx): ", $query))
+            return $query
         return $query
     
 };
@@ -452,8 +458,6 @@ declare function local:sanitize-lucene-query($query-string as xs:string) as xs:s
     return $query-string
 };
 
-
-(:based on Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
 declare function local:parse-lucene($string as xs:string) {
     (: replace all symbolic booleans with lexical counterparts :)
     (: if '&&', '||' or '!' are used :)
@@ -511,14 +515,14 @@ declare function local:parse-lucene($string as xs:string) {
                             concat('<query>', replace(normalize-space($string), '_', '"'), '</query>')
 };
 
-
 (:based on Ron Van den Branden, https://rvdb.wordpress.com/2010/08/04/exist-lucene-to-xml-syntax/:)
-declare function local:lucene2xml($node as item()) {
-    typeswitch ($node)
+declare function local:lucene2xml($node as item(), $mode as xs:string) {
+    (:There has to be a way of aborting a search which is not syntactically correct, e.g. does not close parentheses:)
+        typeswitch ($node)
         case element(query) return 
             element { node-name($node)} {
             element bool {
-            $node/node()/local:lucene2xml(.)
+            $node/node()/local:lucene2xml(., $mode)
         }
     }
     case element(AND) return ()
@@ -550,7 +554,7 @@ declare function local:lucene2xml($node as item()) {
                         }
                     else ()
                     ,
-                    $node/node()/local:lucene2xml(.)
+                    $node/node()/local:lucene2xml(., $mode)
         }
     case text() return
         if ($node/parent::*[self::query or self::bool]) 
@@ -558,14 +562,17 @@ declare function local:lucene2xml($node as item()) {
             for $tok at $p in tokenize($node, '\s+')[normalize-space()]
             (: here is the place for further differentiation between  term / wildcard / regex elements :)
             (: using regex-regex detection (?): matches($string, '((^|[^\\])[.?*+()\[\]\\^]|\$$)') :)
+            (:It is not possible, with the Java regex engine, to parse a string to see whether it is a valid regex, see https://stackoverflow.com/questions/172303/:)
                 let $el-name := 
-                    if (matches($tok, '(^|[^\\])[$^|+\p{P}-[,]]'))
-                    then 'wildcard'
-                    else 
-                        if (matches($tok, '(^|[^\\.])[?*+]|\[!'))
+                    (:How could one reliably distinguish reliably between a wildcard search and a regex search? Better rule out wildcard searches …:)
+                    (:One could also simply dispense with 'term' and use 'regex' instead - is there was a speed penalty?:)
+                    (:if (matches($tok, '(^|[^\\])[$^|+\p{P}-[,]]')):)
+                    (:then 'wildcard':)
+                    (:else :)
+                        if (matches($tok, '((^|[^\\])[.?*+()\[\]\\^]|\$$)') or $mode eq 'regex')
                         then 'regex'
                         else 'term'
-                return 
+                return
                     element { $el-name } {
                         attribute occur {
                         (:if the term follows AND:)
@@ -585,11 +592,17 @@ declare function local:lucene2xml($node as item()) {
                     if (matches($tok, '(.*?)(\^(\d+))(\W|$)')) 
                     then
                         attribute boost {
-                            replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3')
+                            if ($app:LANG eq 'sanskrit')
+                            (:regex searches have to be lower-cased:)
+                            then lower-case(concat('.*', replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3'), '.*'))
+                            else lower-case(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$3'))
                         }
                     else ()
         ,
-        normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1'))
+        if ($app:LANG eq 'sanskrit')
+        (:regex searches have to be lower-cased:)
+        then lower-case(concat('.*', normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1')), '.*'))
+        else lower-case(normalize-space(replace($tok, '(.*?)(\^(\d+))(\W|$)', '$1')))
         }
         else normalize-space($node)
     default return
